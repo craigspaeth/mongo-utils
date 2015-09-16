@@ -1,4 +1,4 @@
-{exec} = require('child_process')
+{spawn} = require('child_process')
 parseURL = require('url').parse
 heroku = require 'heroku'
 fs = require 'fs'
@@ -7,10 +7,20 @@ MSON = require 'mongoson'
 
 module.exports = utils = {}
 utils.log = ->
-  
+
 utils.loggedExec = (command, next) ->
   utils.log "> #{command}"
-  exec command, next
+  stderr = ''
+  stdout = ''
+  cmd = spawn command.split(' ')[0], command.split(' ')[1..]
+  cmd.stdout.on 'data', (data) ->
+    stdout += str = data.toString()
+    utils.log str
+  cmd.stderr.on 'data', (data) ->
+    stderr += str = data.toString()
+    utils.log str
+  cmd.on 'error', next
+  cmd.on 'close', -> next null, stdout, stderr
 
 utils.parseConnectionString = (connectionString) ->
   parsedURL = parseURL connectionString
@@ -44,7 +54,7 @@ utils.restoreDatabase = (connectionString, dirName, next) ->
     return next null, stdOut, stdErr
 
 utils.makeDumpCommand = (connectionString, dirName) ->
-  throw "No target directory given." unless dirName 
+  throw "No target directory given." unless dirName
   throw "Target directory must be a string" unless typeof dirName is "string"
   connectionParameters = utils.parseConnectionString connectionString
   commandOptions = makeCommandOptions connectionParameters
@@ -54,7 +64,7 @@ utils.makeDumpCommand = (connectionString, dirName) ->
   "mongodump#{argumentString}"
 
 utils.makeRestoreCommand = (connectionString, dirName) ->
-  throw "No source directory given." unless dirName 
+  throw "No source directory given." unless dirName
   throw "Source directory must be a string" unless typeof dirName is "string"
   actualDirName = utils.findDumpDirName dirName
   utils.log "Using #{actualDirName}"
@@ -69,13 +79,13 @@ utils.findDumpDirName = (dirName) ->
   dirCount = 0
   for entryName in fs.readdirSync dirName
     if fs.statSync("#{dirName}/#{entryName}").isDirectory()
-      dirCount += 1 
+      dirCount += 1
       lastDirName = entryName
   switch dirCount
     when 0 then return dirName # a proper dump dir
     when 1 then return dirName + "/" + lastDirName # assume this one is proper
     else throw new Error "#{dirName} contains multiple directories."
-  
+
 utils.dumpHerokuMongoHQDatabase = (appName, dirName, next) ->
   utils.findHerokuMongoHQURL appName, (err, url) ->
     utils.log "Using #{url}"
@@ -111,9 +121,9 @@ makeCommandOptions = (connParams) ->
   options.password = connParams.password if connParams.password
   options
 
-makeCommandArguments = (options, object) ->  
+makeCommandArguments = (options, object) ->
   args = []
-  for name, value of options 
+  for name, value of options
     args.push "--#{name}" unless value is false
     args.push "#{value}" unless value is true or value is false
   args.push object if object
